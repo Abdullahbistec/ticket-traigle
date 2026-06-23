@@ -1,0 +1,63 @@
+version: 1
+
+goals:
+  - Scaffold a PMO ticket-triage dashboard from the PRD, spec-first, with no
+    hand-written code until the scaffold builds.
+
+# Each task is sized for <= 30 minutes and maps to one user story in
+# docs/spec/stories/. `context` lists the files attached to the Claude Code
+# prompt; `files` lists what the task is allowed to write.
+tasks:
+  - id: T1
+    story: S-001
+    prompt: "Read docs/spec/prd.md. Generate prisma/schema.prisma for the Ticket entity matching FR-1 and FR-2 only (title, description, priority, owner, status, timestamps). SQLite target — do not use enum types."
+    context: [docs/spec/prd.md, docs/spec/adr-002-data-layer.md]
+    files: [prisma/schema.prisma]
+
+  - id: T2
+    story: S-001
+    prompt: "Generate prisma/seed-data/tickets.json with 6-8 realistic PMO tickets, and prisma/seed.ts that validates the JSON with the Zod seed schema and inserts it idempotently."
+    context: [prisma/schema.prisma, src/lib/validation.ts]
+    files: [prisma/seed.ts, prisma/seed-data/tickets.json]
+
+  - id: T3
+    story: S-005
+    prompt: "Generate src/lib/validation.ts: Zod schemas for priority (P0|P1|P2), status (open|closed), the seed ticket, and the PATCH body (all fields optional, at least one required). Export inferred types. No `any`."
+    context: [docs/spec/prd.md]
+    files: [src/lib/validation.ts]
+
+  - id: T4
+    story: S-003
+    prompt: "Generate src/lib/priority.ts: a TicketView type, PRIORITIES order, labels, and pure groupByPriority / countsByPriority helpers. No I/O, no Prisma import."
+    context: [src/lib/validation.ts]
+    files: [src/lib/priority.ts]
+
+  - id: T5
+    story: S-004
+    prompt: "Generate src/lib/db.ts (Prisma singleton) and src/server/routes/tickets.ts with listTickets() (open tickets grouped + counts) and updateTicket(id, input) (Zod-validate, 404 if missing). Return typed results, no `any`."
+    context: [prisma/schema.prisma, src/lib/priority.ts, src/lib/validation.ts]
+    files: [src/lib/db.ts, src/server/routes/tickets.ts]
+
+  - id: T6
+    story: S-004
+    prompt: "Generate src/app/api/tickets/route.ts: a GET handler that returns listTickets() as JSON."
+    context: [src/server/routes/tickets.ts]
+    files: [src/app/api/tickets/route.ts]
+
+  - id: T7
+    story: S-002
+    prompt: "Generate src/app/api/tickets/[id]/route.ts: a PATCH handler that tags a ticket's priority/owner. Next.js 15 — params is a Promise and must be awaited. Map a validation failure to 400 and a missing ticket to 404."
+    context: [src/server/routes/tickets.ts]
+    files: ["src/app/api/tickets/[id]/route.ts"]
+
+  - id: T8
+    story: S-003
+    prompt: "Generate src/app/tickets/page.tsx as a server component that calls listTickets() and renders one lane per priority with a count badge and ticket cards. Plus layout.tsx and globals.css (Tailwind v4)."
+    context: [src/server/routes/tickets.ts, src/lib/priority.ts]
+    files: [src/app/tickets/page.tsx, src/app/layout.tsx, src/app/globals.css, src/app/page.tsx]
+
+  - id: T9
+    story: S-006
+    prompt: "Generate Vitest smoke tests for groupByPriority/countsByPriority and the Zod schemas, and .github/workflows/ci.yml running install, prisma generate, lint, typecheck, test, build with pnpm + Next build caching."
+    context: [src/lib/priority.ts, src/lib/validation.ts, package.json]
+    files: [tests/priority.test.ts, tests/validation.test.ts, .github/workflows/ci.yml]
