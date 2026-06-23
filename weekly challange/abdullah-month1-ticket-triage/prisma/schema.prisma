@@ -1,0 +1,27 @@
+// Prisma schema — Ticket Triage (PMO).
+// SQLite has no native enum type, so `priority` and `status` are stored as
+// strings and constrained by Zod at the API boundary (see src/lib/validation.ts).
+// This trade-off is recorded in docs/spec/adr-002-data-layer.md.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Ticket {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  priority    String // "P0" | "P1" | "P2"
+  owner       String
+  status      String   @default("open") // "open" | "closed"
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([priority])
+  @@index([status])
+}
