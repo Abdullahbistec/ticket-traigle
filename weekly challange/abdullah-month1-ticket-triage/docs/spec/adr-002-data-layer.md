@@ -1,41 +1,41 @@
-# ADR-002 — Data layer: Prisma + SQLite
+# ADR-002: Data Layer — Prisma + SQLite
 
-**Status:** Accepted · **Date:** 2026-06-16
+**Status:** Accepted  
+**Date:** 2026-06-16
 
 ## Context
 
-We need persistence for a single `Ticket` entity, a clean migration story, and a
-typed client so the "zero `any`" NFR holds end to end. The dataset is small
-(tens of tickets) and runs locally and in CI without external infrastructure.
-The training stack fixes Prisma + SQLite.
+The scaffold needs a typed ORM and database that:
+- Runs in CI with no external infrastructure
+- Generates TypeScript types from the schema
+- Supports migrations committed to the repo
+- Can be swapped to Postgres in Month 2 without a schema rewrite
 
 ## Decision
 
-Use **Prisma ORM** with a **SQLite** datasource (`file:./dev.db`). Prisma
-generates a fully typed client from `schema.prisma`; migrations are versioned;
-the database is a single file that needs no server in dev or CI.
+Use **Prisma 5** as the ORM with **SQLite** as the database for Month 1.
 
-Because **SQLite has no native enum type**, `priority` and `status` are stored as
-`String` and constrained by Zod (`src/lib/validation.ts`) at every write path
-(seed and PATCH). The narrow union types are reconstructed once, at the read
-boundary in `src/server/routes/tickets.ts`.
+- `prisma/schema.prisma` is the single source of truth for the data model
+- `prisma migrate dev` handles local migrations; CI runs `prisma generate` only
+- SQLite file at `prisma/dev.db` (gitignored) keeps setup to one command
+- Moving to Postgres in Month 2 requires changing only the `datasource` block
+
+## Alternatives Rejected
+
+| Option | Reason rejected |
+|--------|----------------|
+| Prisma + PostgreSQL | Requires a running Postgres — adds infrastructure Month 1 doesn't need |
+| Drizzle + SQLite | Migration tooling less mature; less Bistec team experience |
+| Kysely | No schema-first codegen; type safety requires more manual work |
 
 ## Consequences
 
-- One typed client shared by the dashboard and the API; model changes surface as
-  type errors, supporting the zero-`any` goal.
-- SQLite needs no container, so CI just needs `prisma generate` + a migration —
-  helping the < 3-minute CI target.
-- Enum-like fields are only as safe as the Zod layer in front of them; validation
-  is therefore non-optional on writes.
-- Swapping to Postgres later is a datasource + migration change, not an
-  application rewrite (Prisma abstracts the client).
+**Positive:**
+- Zero infrastructure: `cp .env.example .env && pnpm db:migrate` and you're running
+- Prisma generates typed client from schema — no `any` risk in DB layer
+- Migrations are tracked in git
 
-## Rejected alternatives
-
-- **`better-sqlite3` with hand-written SQL.** Rejected: fast, but we'd hand-roll
-  types and migrations and lose the typed client that underpins the zero-`any`
-  NFR.
-- **Postgres in Docker.** Rejected for this milestone: operationally heavier in
-  dev and CI than the dataset warrants; revisit when concurrency or multi-user
-  access is real.
+**Negative:**
+- SQLite does not support concurrent writes — not suitable for multi-instance production
+- Prisma Client size adds ~2 MB to the bundle (acceptable for an internal tool)
+- Must remember to run `prisma generate` in CI before `next build`

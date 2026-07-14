@@ -1,21 +1,16 @@
-import js from "@eslint/js";
-import tseslint from "typescript-eslint";
+import { dirname } from "path";
+import { fileURLToPath } from "url";
+import { FlatCompat } from "@eslint/eslintrc";
 
-export default tseslint.config(
-  {
-    ignores: [
-      "node_modules/**",
-      ".next/**",
-      "next-env.d.ts",
-      "src/generated/**",
-    ],
-  },
-  js.configs.recommended,
-  ...tseslint.configs.recommended,
-  {
-    rules: {
-      // NFR: zero `any` in the codebase.
-      "@typescript-eslint/no-explicit-any": "error",
-    },
-  },
-);
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+const compat = new FlatCompat({
+  baseDirectory: __dirname,
+});
+
+const eslintConfig = [
+  ...compat.extends("next/core-web-vitals", "next/typescript"),
+];
+
+export default eslintConfig;

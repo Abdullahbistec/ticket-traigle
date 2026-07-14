@@ -1,17 +1,32 @@
-import { NextResponse, type NextRequest } from "next/server";
-import { updateTicket } from "@/server/routes/tickets";
+import { NextRequest, NextResponse } from "next/server";
+import { db } from "@/lib/db";
+import { PatchTicketSchema } from "@/types/ticket";
 
-// In Next.js 15 dynamic route params are async and must be awaited.
 export async function PATCH(
-  req: NextRequest,
-  ctx: { params: Promise<{ id: string }> },
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const { id } = await ctx.params;
-  const body: unknown = await req.json().catch(() => null);
+  const { id } = await params;
 
-  const result = await updateTicket(id, body);
-  if (!result.ok) {
-    return NextResponse.json({ error: result.error }, { status: result.status });
+  const body: unknown = await request.json();
+  const parsed = PatchTicketSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "Invalid input", issues: parsed.error.issues },
+      { status: 400 },
+    );
   }
-  return NextResponse.json(result.ticket);
+
+  const existing = await db.ticket.findUnique({ where: { id } });
+  if (!existing) {
+    return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
+  }
+
+  const updated = await db.ticket.update({
+    where: { id },
+    data: parsed.data,
+  });
+
+  return NextResponse.json(updated);
 }

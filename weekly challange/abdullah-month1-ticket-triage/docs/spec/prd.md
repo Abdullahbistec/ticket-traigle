@@ -1,105 +1,111 @@
 # Ticket Triage Tool — PRD
 
-> Repo copy. The graded submission combines this PRD with the ADRs as
-> `abdullah-month1-spec.md`. ADRs live in `adr-001-framework.md` and
-> `adr-002-data-layer.md`; stories live in `stories/`.
-
 ## 1. Persona
 
-**Nadia Perera — PMO Coordinator, Bistec Global.**
+**Primary user:** PMO coordinator at Bistec Global  
+**Context:** The PMO coordinator processes 20–50 support tickets per day across email, web chat, and internal Slack threads. Tickets arrive unstructured with no consistent priority tagging.  
+**Pain point:** The coordinator spends 40–60 minutes daily copying tickets into a shared spreadsheet, manually assigning priorities, and forwarding to the right team. There is no single queue view and no audit trail.
 
-Nadia runs intake and triage for the PMO. Across a working week she fields
-project issues, change requests, and risks from delivery leads over Teams,
-email, and side conversations. Her context: three to five active client
-projects at any time, a 48-hour SLA to acknowledge anything urgent, and a
-Monday steering call where she has to state, from memory, what is on fire.
-
-**Pain point:** there is no single prioritised view. Urgent items (a blocked
-contract, a double-booked PM) sit in the same undifferentiated inbox as
-low-stakes formatting requests, so the genuinely critical ones surface late and
-the weekly report is rebuilt by hand every time.
+---
 
 ## 2. Problem Statement
 
-The PMO currently triages tickets across at least three tools with no shared
-priority list. Concretely, today:
+Today, incoming tickets are scattered across three channels with no unified queue. Coordinators cannot see at a glance how many critical (P0) issues are open, which tickets are unowned, or what the team backlog looks like. This causes P0 escalations to be missed until a senior engineer notices, and low-priority feature requests to consume triage time that should go to outages. The tool must exist because the team is growing from 8 to 20 and the manual spreadsheet cannot scale.
 
-- Intake is spread over Teams, email, and Jira comments — **no single source**.
-- A P0 (delivery-blocking) item is **acknowledged in ~6 working hours on
-  average**, against a 48-hour SLA that hides how slow the urgent path really is.
-- The Monday status view is **reassembled manually each week (~30–40 min)** from
-  scattered notes, and counts disagree between people.
+**Measurable impact of current gap:**  
+- Mean time to acknowledge P0 tickets: >45 minutes  
+- Coordinator time lost to triage admin: ~50 min/day
 
-The cost is missed-urgent risk and repeated manual reporting. This milestone
-delivers the smallest thing that fixes the core gap: one prioritised, grouped
-view backed by a validated API, seeded from a single file the PMO controls.
+---
 
 ## 3. Goals & Non-Goals
 
-**Goals (measurable)**
-- One dashboard that lists all open tickets grouped into P0/P1/P2 with a live
-  count badge per group.
-- Tickets are seeded from a single JSON file the PMO owns (no DB console needed
-  to load data).
-- Priority and owner of a ticket can be changed through a validated API in a
-  single request.
-- Initial dashboard render in **< 1.5s on localhost**; API p95 **< 150ms** on
-  seed data.
+### Goals
 
-**Non-Goals (explicit)**
-- No authentication or per-user accounts this milestone (see Offline Milestones).
-- No notifications, email, or real-time updates.
-- No multi-project or portfolio roll-up; one flat ticket list.
-- No comments/attachments/history (a `Comment` entity is a later story).
-- No inline editing UI this milestone — tagging is exercised via the PATCH API;
-  the edit affordance in the dashboard is a fast-follow story (S-002 UI).
+- **G-1:** Reduce coordinator triage time from 50 min/day to under 10 min/day
+- **G-2:** All open P0 tickets visible in under 5 seconds from opening the dashboard
+- **G-3:** Priority and owner can be updated in one interaction (no page reload)
+- **G-4:** API responds to GET /tickets in under 150ms p95 with 1,000-row seed
+
+### Non-Goals
+
+- Real-time push notifications (not in scope for Month 1)
+- Multi-tenant / multi-org support
+- Authentication / authorization (added in Month 2 offline milestone)
+- AI auto-triage (future sprint)
+
+---
 
 ## 4. Functional Requirements
 
-**FR-1 — List open tickets from a JSON seed**
-- **Given** the seed file `prisma/seed-data/tickets.json` has been loaded,
-- **When** Nadia opens `/tickets`,
-- **Then** every ticket with `status = "open"` is shown, and closed tickets are
-  excluded.
+### FR-1 — List open tickets
 
-**FR-2 — Tag a ticket with priority (P0/P1/P2) and owner**
-- **Given** an existing ticket id,
-- **When** a `PATCH /api/tickets/:id` request sets `priority` and/or `owner`,
-- **Then** the stored ticket reflects the new values and the dashboard shows it
-  in the matching priority group on next load.
+**Given** the dashboard loads at /tickets  
+**When** the page renders  
+**Then** all tickets are shown grouped by priority (P0 / P1 / P2) with a count badge per group, ordered newest-first within each group
 
-**FR-3 — Group by priority with count badges**
-- **Given** open tickets across more than one priority,
-- **When** the dashboard renders,
-- **Then** tickets appear under exactly one of three lanes (P0, P1, P2), each
-  lane shows a numeric badge equal to its ticket count, and an empty lane shows a
-  zero badge and an empty state.
+### FR-2 — Priority badge per ticket
 
-**FR-4 — API exposes GET /tickets and PATCH /tickets/:id with Zod-validated input**
-- **Given** the API is running,
-- **When** `GET /api/tickets` is called,
-- **Then** it returns valid JSON with tickets grouped by priority plus counts;
-- **And when** `PATCH /api/tickets/:id` receives a body,
-- **Then** the body is validated with Zod and an invalid body returns HTTP 400
-  with field errors (never a partial write).
+**Given** a ticket row is displayed  
+**When** the coordinator scans the queue  
+**Then** each row shows the ticket ID, title, priority badge, owner (if set), and creation time
 
-**FR-5 — PR passes GitHub Actions lint + build + smoke test**
-- **Given** a pull request to `main`,
-- **When** CI runs,
-- **Then** ESLint, `tsc --noEmit`, Vitest (≥1 test), and `next build` all pass,
-  and a red check blocks merge.
+### FR-3 — Ticket data model
+
+**Given** a ticket is created  
+**When** stored in the database  
+**Then** it has: `id` (cuid), `title` (string), `body` (string), `priority` (P0/P1/P2, default P2), `owner` (nullable string), `status` (OPEN/IN_PROGRESS/RESOLVED, default OPEN), `channel` (string, default "web"), `createdAt`, `updatedAt`
+
+### FR-4 — GET /tickets
+
+**Given** the API receives GET /api/tickets  
+**When** the database is seeded  
+**Then** it returns JSON `{ tickets: [...], grouped: { P0: [...], P1: [...], P2: [...] }, counts: { P0: n, P1: n, P2: n, total: n } }` with HTTP 200
+
+### FR-5 — PATCH /tickets/:id
+
+**Given** the API receives PATCH /api/tickets/:id with a JSON body  
+**When** the body contains one or more of `{ priority, owner, status }`  
+**Then** it validates with Zod, returns 400 + `{ error, issues }` on invalid input, 404 if the ticket does not exist, or 200 + the updated ticket on success
+
+---
 
 ## 5. Non-Functional Requirements
 
-| Area | Target |
-|------|--------|
-| Performance — page | Initial render of `/tickets` **< 1.5s** on localhost with seed data |
-| Performance — API | `GET /api/tickets` p95 **< 150ms** on seed data |
-| Type safety | **Zero `any`** types; `tsc --noEmit` and ESLint `no-explicit-any` both clean |
-| Security | All PATCH input Zod-validated; invalid input rejected with 400 and no write; no secrets committed (SQLite path only) |
-| Observability | Each API request logs method, path, status, and duration (single structured line) |
-| Process | Conventional Commits; all commits signed; **CI end-to-end < 3 min** |
+| Requirement | Target | Measurement |
+|-------------|--------|-------------|
+| Initial page render | < 1,500ms | Lighthouse localhost |
+| GET /api/tickets p95 | < 150ms | seed data (1,000 rows) |
+| Zero `any` in TypeScript | 0 | `tsc --noEmit` strict |
+| CI end-to-end duration | < 3 minutes | GitHub Actions |
+| Commit messages | Conventional Commits | git log |
 
-## Related ADRs
-- `adr-001-framework.md` — Next.js 15 App Router
-- `adr-002-data-layer.md` — Prisma + SQLite
+---
+
+## 6. Architecture Decision Records
+
+### ADR-001: Framework — Next.js 15 App Router
+
+**Context:** Need a full-stack TypeScript framework that can serve both the dashboard UI and the JSON API from a single repo.
+
+**Decision:** Use Next.js 15 App Router. Server components handle the dashboard with zero client-side JavaScript for the initial render. API Routes handle GET /tickets and PATCH /tickets/:id.
+
+**Alternatives rejected:**
+- **Express + React SPA** — requires two repos, separate deployment, and more boilerplate for a single internal tool
+- **Remix** — smaller ecosystem for Bistec team, fewer examples to reference in training
+
+**Consequences:** Tied to Vercel conventions. `typedRoutes` experimental flag needed for strict route typing.
+
+---
+
+### ADR-002: Data layer — Prisma + SQLite
+
+**Context:** Need a typed ORM and a database that requires zero infrastructure setup for a local development + CI environment.
+
+**Decision:** Prisma 5 as ORM, SQLite as database. Schema-first: `prisma/schema.prisma` is the single source of truth. Migrations committed to the repo.
+
+**Alternatives rejected:**
+- **Drizzle + SQLite** — less mature migration tooling at the time of writing; less documentation available for onboarding
+- **Prisma + PostgreSQL** — requires a running Postgres server; adds infrastructure overhead for a Month 1 scaffold
+
+**Consequences:** SQLite is not suitable for multi-process writes in production. Moving to Postgres in Month 2 requires updating `datasource` block only (no schema changes).

@@ -1,63 +1,101 @@
 version: 1
-
 goals:
-  - Scaffold a PMO ticket-triage dashboard from the PRD, spec-first, with no
-    hand-written code until the scaffold builds.
+  - Scaffold a ticket triage dashboard from the PRD, spec-first
 
-# Each task is sized for <= 30 minutes and maps to one user story in
-# docs/spec/stories/. `context` lists the files attached to the Claude Code
-# prompt; `files` lists what the task is allowed to write.
 tasks:
   - id: T1
     story: S-001
-    prompt: "Read docs/spec/prd.md. Generate prisma/schema.prisma for the Ticket entity matching FR-1 and FR-2 only (title, description, priority, owner, status, timestamps). SQLite target — do not use enum types."
-    context: [docs/spec/prd.md, docs/spec/adr-002-data-layer.md]
+    title: Prisma schema
+    prompt: >
+      Read docs/spec/prd.md FR-1..FR-3.
+      Generate prisma/schema.prisma with a Ticket model that has:
+      id (cuid), title, body, priority (P0/P1/P2), owner (nullable),
+      status (OPEN/IN_PROGRESS/RESOLVED), channel, createdAt, updatedAt.
+      SQLite datasource. Do not add fields not in the PRD.
     files: [prisma/schema.prisma]
+    estimate: 15m
 
   - id: T2
     story: S-001
-    prompt: "Generate prisma/seed-data/tickets.json with 6-8 realistic PMO tickets, and prisma/seed.ts that validates the JSON with the Zod seed schema and inserts it idempotently."
-    context: [prisma/schema.prisma, src/lib/validation.ts]
-    files: [prisma/seed.ts, prisma/seed-data/tickets.json]
+    title: Prisma seed data
+    prompt: >
+      Read prisma/schema.prisma.
+      Generate prisma/seed.ts with 7 seed tickets covering P0/P1/P2
+      that match the personas in docs/spec/prd.md §1.
+      Use tsx to run it: add "db:seed": "tsx prisma/seed.ts" to package.json.
+    files: [prisma/seed.ts]
+    estimate: 15m
+    dependsOn: [T1]
 
   - id: T3
-    story: S-005
-    prompt: "Generate src/lib/validation.ts: Zod schemas for priority (P0|P1|P2), status (open|closed), the seed ticket, and the PATCH body (all fields optional, at least one required). Export inferred types. No `any`."
-    context: [docs/spec/prd.md]
-    files: [src/lib/validation.ts]
+    story: S-002
+    title: GET /tickets API
+    prompt: >
+      Read prisma/schema.prisma and docs/spec/prd.md FR-4.
+      Generate src/app/api/tickets/route.ts (Next.js 15 App Router).
+      GET returns { tickets, grouped: {P0,P1,P2}, counts }.
+      Use the shared db client at src/lib/db.ts.
+    files: [src/app/api/tickets/route.ts, src/lib/db.ts]
+    estimate: 20m
+    dependsOn: [T1]
 
   - id: T4
     story: S-003
-    prompt: "Generate src/lib/priority.ts: a TicketView type, PRIORITIES order, labels, and pure groupByPriority / countsByPriority helpers. No I/O, no Prisma import."
-    context: [src/lib/validation.ts]
-    files: [src/lib/priority.ts]
+    title: PATCH /tickets/:id API
+    prompt: >
+      Read docs/spec/prd.md FR-5 and src/types/ticket.ts.
+      Generate src/app/api/tickets/[id]/route.ts.
+      PATCH validates body with PatchTicketSchema (Zod).
+      Returns 400 with issues on invalid input, 404 if not found, 200 with updated ticket.
+      Zero any types.
+    files: [src/app/api/tickets/[id]/route.ts, src/types/ticket.ts]
+    estimate: 25m
+    dependsOn: [T3]
 
   - id: T5
     story: S-004
-    prompt: "Generate src/lib/db.ts (Prisma singleton) and src/server/routes/tickets.ts with listTickets() (open tickets grouped + counts) and updateTicket(id, input) (Zod-validate, 404 if missing). Return typed results, no `any`."
-    context: [prisma/schema.prisma, src/lib/priority.ts, src/lib/validation.ts]
-    files: [src/lib/db.ts, src/server/routes/tickets.ts]
+    title: Tickets dashboard page
+    prompt: >
+      Read src/app/api/tickets/route.ts and docs/spec/prd.md FR-1..FR-2.
+      Generate src/app/tickets/page.tsx (Next.js 15 server component).
+      Groups tickets by priority with count badges.
+      Uses Tailwind dark theme. No client components.
+      Zero any types.
+    files: [src/app/tickets/page.tsx]
+    estimate: 30m
+    dependsOn: [T3]
 
   - id: T6
-    story: S-004
-    prompt: "Generate src/app/api/tickets/route.ts: a GET handler that returns listTickets() as JSON."
-    context: [src/server/routes/tickets.ts]
-    files: [src/app/api/tickets/route.ts]
+    story: S-005
+    title: Zod schemas + type exports
+    prompt: >
+      Generate src/types/ticket.ts with:
+      PrioritySchema (P0/P1/P2), StatusSchema, PatchTicketSchema.
+      Export inferred types. Export PRIORITY_LABELS and PRIORITY_ORDER maps.
+      No any types, strict Zod.
+    files: [src/types/ticket.ts]
+    estimate: 15m
 
   - id: T7
-    story: S-005
-    prompt: "Generate src/app/api/tickets/[id]/route.ts: a PATCH handler. Next.js 15 — params is a Promise and must be awaited. Map a validation failure to 400 and a missing ticket to 404."
-    context: [src/server/routes/tickets.ts]
-    files: ["src/app/api/tickets/[id]/route.ts"]
+    story: S-006
+    title: Vitest smoke tests
+    prompt: >
+      Read src/types/ticket.ts.
+      Generate tests/smoke.test.ts with 8 Vitest tests covering:
+      valid priority/owner/status patches, combined patch,
+      invalid priority, empty owner, unknown fields, empty object.
+      Must all pass without a database.
+    files: [tests/smoke.test.ts, vitest.config.ts]
+    estimate: 20m
+    dependsOn: [T6]
 
   - id: T8
-    story: S-003
-    prompt: "Generate src/app/tickets/page.tsx as a server component that calls listTickets() and renders one lane per priority with a count badge and ticket cards. Plus layout.tsx and globals.css (Tailwind v4)."
-    context: [src/server/routes/tickets.ts, src/lib/priority.ts]
-    files: [src/app/tickets/page.tsx, src/app/layout.tsx, src/app/globals.css, src/app/page.tsx]
-
-  - id: T9
-    story: S-006
-    prompt: "Generate Vitest smoke tests for groupByPriority/countsByPriority and the Zod schemas, and .github/workflows/ci.yml running install, prisma generate, lint, typecheck, test, build with pnpm + Next build caching."
-    context: [src/lib/priority.ts, src/lib/validation.ts, package.json]
-    files: [tests/priority.test.ts, tests/validation.test.ts, .github/workflows/ci.yml]
+    story: S-007
+    title: GitHub Actions CI
+    prompt: >
+      Generate .github/workflows/ci.yml.
+      Jobs: lint, typecheck, test, prisma generate, build.
+      Uses pnpm/action-setup@v4, setup-node with pnpm cache.
+      Must complete in under 3 minutes. DATABASE_URL set for build step.
+    files: [.github/workflows/ci.yml]
+    estimate: 15m

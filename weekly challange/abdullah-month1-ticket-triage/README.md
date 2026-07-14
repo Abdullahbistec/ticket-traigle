@@ -1,88 +1,78 @@
-# PMO Ticket Triage
+# Ticket Triage Dashboard
 
-A lightweight triage dashboard for the Bistec PMO. Open tickets are seeded from a
-JSON file, grouped into P0 / P1 / P2 lanes with count badges, and updated through
-a Zod-validated API. Built **spec-first**: the spec in [`docs/spec/`](docs/spec/)
-came before any code, and the whole scaffold is regenerable from it (see below).
+PMO internal tool. Lightweight ticket triage dashboard built spec-first with Next.js 15, Prisma + SQLite, TypeScript strict, Tailwind.
 
-**Stack:** Next.js 15 (App Router) · TypeScript (strict) · Prisma + SQLite ·
-Tailwind v4 · Zod · Vitest.
-
-## Prerequisites
-
-- Node.js >= 20
-- pnpm (`corepack enable`)
-- No database server — SQLite is a local file.
-
-## Run it
+## Quick start
 
 ```bash
 pnpm install
-cp .env.example .env          # DATABASE_URL="file:./dev.db"
-pnpm db:generate              # prisma generate
-pnpm db:migrate               # creates + applies the initial SQLite migration
-pnpm db:seed                  # loads prisma/seed-data/tickets.json
-pnpm dev                      # http://localhost:3000  → redirects to /tickets
+cp .env.example .env
+pnpm db:migrate        # creates prisma/dev.db
+pnpm db:seed           # loads 7 seed tickets
+pnpm dev               # http://localhost:3000
 ```
 
-First-time `pnpm db:migrate` creates `prisma/migrations/` and `prisma/dev.db`.
+## Checks
 
-## Scripts
-
-| Script | Does |
-|--------|------|
-| `pnpm dev` | Next dev server |
-| `pnpm build` / `pnpm start` | Production build / serve |
-| `pnpm lint` | ESLint (strict, bans `any`) |
-| `pnpm typecheck` | `tsc --noEmit` |
-| `pnpm test` | Vitest smoke tests |
-| `pnpm db:generate` / `db:migrate` / `db:seed` | Prisma client / migration / seed |
-| `pnpm setup` | generate + migrate + seed in one step |
+```bash
+pnpm lint              # ESLint strict
+pnpm typecheck         # tsc --noEmit
+pnpm test              # Vitest (8 smoke tests)
+pnpm build             # Next.js production build
+pnpm check             # all four in sequence
+```
 
 ## API
 
-The dashboard lives at `/tickets`, so the API is namespaced under `/api`
-(a route segment can't be both a page and a handler).
+| Method | Route | Description |
+|--------|-------|-------------|
+| GET | `/api/tickets` | All tickets, grouped by priority |
+| PATCH | `/api/tickets/:id` | Update priority / owner / status |
+
+### PATCH body (all optional)
+
+```json
+{ "priority": "P0", "owner": "engineering", "status": "IN_PROGRESS" }
+```
+
+## Regenerate with Claude Code
 
 ```bash
-# List open tickets, grouped by priority with counts
-curl http://localhost:3000/api/tickets
-
-# Update a ticket's priority and/or owner (Zod-validated)
-curl -X PATCH http://localhost:3000/api/tickets/<id> \
-  -H 'content-type: application/json' \
-  -d '{"priority":"P0","owner":"Nadia Perera"}'
+claude "Read docs/spec/prd.md and speckit.yaml. \
+  Execute each task in order, files listed per task. \
+  Do not add fields, routes, or components not in the PRD."
 ```
 
-Invalid input returns `400` with field errors; an unknown id returns `404`.
+## Stack
 
-## Structure
+- **Next.js 15** App Router (server components, no client state)
+- **TypeScript** strict + `noUncheckedIndexedAccess`
+- **Prisma 5** + SQLite
+- **Zod** for API input validation
+- **Tailwind CSS 3**
+- **Vitest** for unit/smoke tests
+- **GitHub Actions** CI (lint → typecheck → test → build)
+
+## Project structure
 
 ```
-docs/spec/        PRD, ADRs, user stories (the source of truth)
-prisma/           schema.prisma, seed.ts, seed-data/tickets.json
-src/app/tickets/  dashboard (server component)
-src/app/api/      route handlers (thin) -> src/server/routes/tickets.ts
-src/lib/          db client, priority helpers, Zod schemas
-tests/            Vitest smoke tests
-speckit.yaml      agent-executable task plan (T1..T9)
-.github/workflows/ci.yml
+src/
+  app/
+    api/tickets/route.ts         GET /api/tickets
+    api/tickets/[id]/route.ts    PATCH /api/tickets/:id
+    tickets/page.tsx             Dashboard UI
+    layout.tsx
+    globals.css
+  lib/db.ts                      Prisma singleton
+  types/ticket.ts                Zod schemas + type exports
+prisma/
+  schema.prisma
+  seed.ts
+tests/
+  smoke.test.ts                  8 Vitest tests (no DB needed)
+docs/spec/
+  prd.md
+  adr-001-framework.md
+  adr-002-data-layer.md
+speckit.yaml                     Agent-executable task plan
 ```
-
-## Regenerate from the spec (single command)
-
-With Claude Code, from the repo root:
-
-```bash
-claude "Read docs/spec/prd.md, docs/spec/adr-001-framework.md, \
-  docs/spec/adr-002-data-layer.md and speckit.yaml. \
-  Execute the Speckit plan T1..T9 in order, writing only the files each task \
-  lists. Do not add fields or endpoints beyond the PRD."
-```
-
-## Notes on the NFRs
-
-- **Zero `any`:** enforced by `tsc` strict + ESLint `no-explicit-any`.
-- **Validation:** every write goes through Zod (`src/lib/validation.ts`).
-- **CI:** `.github/workflows/ci.yml` runs install → prisma generate → lint →
-  typecheck → test → build, with pnpm and Next build caching.
